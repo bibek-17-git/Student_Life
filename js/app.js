@@ -103,6 +103,17 @@ function renderDashboard() {
         </div>`).join('')}</div>` : `<div class="empty-state">No classes scheduled today. Add your routine in the Schedule tab.</div>`}
     </div>
 
+    <div class="section-title">Exams & Assessments</div>
+    <div class="card">
+      ${upcomingExams.length ? `<div class="row-list">${upcomingExams.map(e => {
+        const days = daysUntil(e.date);
+        return `<div class="row-item">
+          <div><div class="title">${e.alarm !== false ? '🔔 ' : ''}${escapeHtml(e.subject)}</div><div class="meta">${e.date}${e.time ? ' · '+e.time : ''}</div></div>
+          <span class="pill ${days<=3?'red':days<=7?'amber':'green'}">${days} days left</span>
+        </div>`;
+      }).join('')}</div>` : `<div class="empty-state">No upcoming exams or assignments. Add them in the Schedule tab.</div>`}
+    </div>
+
     <div class="section-title" style="margin-top:22px;">Finance Overview</div>
     <div class="grid cols-4">
       <div class="card">
@@ -133,17 +144,6 @@ function renderDashboard() {
       <div class="stat blue">${fmt(safeToday)}</div>
       <div class="stat-label">based on remaining monthly budget ÷ ${daysLeft} days left</div>
     </div>` : ''}
-
-    <div class="section-title">Exams & Assessments</div>
-    <div class="card">
-      ${upcomingExams.length ? `<div class="row-list">${upcomingExams.map(e => {
-        const days = daysUntil(e.date);
-        return `<div class="row-item">
-          <div><div class="title">${escapeHtml(e.subject)}</div><div class="meta">${e.date}</div></div>
-          <span class="pill ${days<=3?'red':days<=7?'amber':'green'}">${days} days left</span>
-        </div>`;
-      }).join('')}</div>` : `<div class="empty-state">No upcoming exams or assignments. Add them in the Schedule tab.</div>`}
-    </div>
 
     <div class="grid cols-2" style="margin-top:22px;">
       <div>
@@ -316,8 +316,8 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   navigate('dashboard');
-  checkDueReminders();
-  setInterval(checkDueReminders, 60000);
+  checkAllAlarms();
+  setInterval(checkAllAlarms, 60000);
 
   // Ask for notification permission on first meaningful interaction (click),
   // since browsers block permission prompts that fire immediately on page load.

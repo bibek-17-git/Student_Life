@@ -68,3 +68,10 @@ function triggerAlarm(title, body) {
   showSystemNotification(title, body);
   showToast('⏰ ' + title);
 }
+
+/* Runs every check cycle: class start times, exam/assignment date-times, and custom reminders */
+function checkAllAlarms() {
+  if (typeof checkDueClasses === 'function') checkDueClasses();
+  if (typeof checkDueExams === 'function') checkDueExams();
+  if (typeof checkDueReminders === 'function') checkDueReminders();
+}

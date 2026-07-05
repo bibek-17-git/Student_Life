@@ -29,6 +29,9 @@ function renderReminders() {
           <option value="monthly">Repeat monthly</option>
         </select>
       </div>
+      <div class="form-row" style="align-items:center;">
+        <label class="checkbox-row" style="cursor:pointer;"><input type="checkbox" id="rem-alarm" checked> 🔔 Set alarm for this date/time</label>
+      </div>
       <button class="btn" id="add-reminder-btn">＋ Add Reminder</button>
     </div>
 
@@ -46,7 +49,7 @@ function renderReminders() {
     <div class="card">
       ${upcoming.length ? `<div class="row-list">${upcoming.map(r => `
         <div class="row-item">
-          <div class="checkbox-row"><input type="checkbox" onchange="toggleReminder('${r.id}')"><div><div class="title">${escapeHtml(r.title)}</div><div class="meta">${new Date(r.datetime).toLocaleString('en-US', {month:'short', day:'numeric', year:'numeric', hour:'2-digit', minute:'2-digit'})}${r.repeat!=='none' ? ' · repeats '+r.repeat : ''}</div></div></div>
+          <div class="checkbox-row"><input type="checkbox" onchange="toggleReminder('${r.id}')"><div><div class="title">${r.alarm !== false ? '🔔 ' : ''}${escapeHtml(r.title)}</div><div class="meta">${new Date(r.datetime).toLocaleString('en-US', {month:'short', day:'numeric', year:'numeric', hour:'2-digit', minute:'2-digit'})}${r.repeat!=='none' ? ' · repeats '+r.repeat : ''}</div></div></div>
           <span class="pill">${r.category}</span>
           <div class="row-actions"><button onclick="deleteReminder('${r.id}')">✕</button></div>
         </div>`).join('')}</div>` : `<div class="empty-state">No upcoming reminders. Add one above.</div>`}
@@ -68,8 +71,9 @@ function bindReminderEvents() {
     const datetime = document.getElementById('rem-datetime').value;
     const category = document.getElementById('rem-category').value;
     const repeat = document.getElementById('rem-repeat').value;
+    const alarm = document.getElementById('rem-alarm').checked;
     if (!title || !datetime) return showToast('Enter a title and date/time');
-    DB.reminders.push({ id: uid(), title, datetime, category, repeat, done: false });
+    DB.reminders.push({ id: uid(), title, datetime, category, repeat, alarm, done: false });
     persist(); render();
   };
 }
@@ -94,7 +98,7 @@ function checkDueReminders() {
   const now = new Date();
   let changed = false;
   DB.reminders.forEach(r => {
-    if (!r.done && !r._alerted) {
+    if (!r.done && !r._alerted && r.alarm !== false) {
       const dt = new Date(r.datetime);
       if (dt <= now && dt > new Date(now - 5 * 60000)) {
         triggerAlarm(r.title, r.category + ' · ' + new Date(r.datetime).toLocaleString('en-US', {hour:'2-digit', minute:'2-digit'}));
