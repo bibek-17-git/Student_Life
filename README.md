@@ -21,9 +21,10 @@ An all-in-one Progressive Web App (PWA) for university students to manage financ
 - Exam/assignment deadline tracker with countdown and syllabus checklist
 - Habit tracker with streaks
 
-**Reminders**
+**Reminders & Alarm**
 - Custom reminders with categories and repeat (daily/weekly/monthly)
 - Auto-surfaced recurring bill due dates
+- Alarm system: when a reminder is due, the app plays a sound, vibrates the device, and shows a system notification (if permission granted) — works while the app or browser is open/in background. It cannot ring while the browser is fully closed (that needs a native app, e.g. via Capacitor, as a future step).
 
 **Notes**
 - Quick notes with pinning
