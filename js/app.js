@@ -89,7 +89,21 @@ function renderDashboard() {
 
   document.getElementById('date-line').textContent = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
+  const upcomingExams = [...(DB.exams || [])]
+    .filter(e => daysUntil(e.date) >= 0)
+    .sort((a,b) => a.date.localeCompare(b.date))
+    .slice(0, 4);
+
   return `
+    <div class="section-title">Today's Classes</div>
+    <div class="card">
+      ${todaysClasses.length ? `<div class="row-list">${todaysClasses.map(c => `
+        <div class="row-item">
+          <div><div class="title">${escapeHtml(c.subject)}</div><div class="meta">${c.start} - ${c.end} ${c.location ? '· '+escapeHtml(c.location) : ''}</div></div>
+        </div>`).join('')}</div>` : `<div class="empty-state">No classes scheduled today. Add your routine in the Schedule tab.</div>`}
+    </div>
+
+    <div class="section-title" style="margin-top:22px;">Finance Overview</div>
     <div class="grid cols-4">
       <div class="card">
         <h3>Today's Spending</h3>
@@ -120,12 +134,15 @@ function renderDashboard() {
       <div class="stat-label">based on remaining monthly budget ÷ ${daysLeft} days left</div>
     </div>` : ''}
 
-    <div class="section-title">Today's Classes</div>
+    <div class="section-title">Exams & Assessments</div>
     <div class="card">
-      ${todaysClasses.length ? `<div class="row-list">${todaysClasses.map(c => `
-        <div class="row-item">
-          <div><div class="title">${escapeHtml(c.subject)}</div><div class="meta">${c.start} - ${c.end} ${c.location ? '· '+escapeHtml(c.location) : ''}</div></div>
-        </div>`).join('')}</div>` : `<div class="empty-state">No classes scheduled today. Add your routine in the Schedule tab.</div>`}
+      ${upcomingExams.length ? `<div class="row-list">${upcomingExams.map(e => {
+        const days = daysUntil(e.date);
+        return `<div class="row-item">
+          <div><div class="title">${escapeHtml(e.subject)}</div><div class="meta">${e.date}</div></div>
+          <span class="pill ${days<=3?'red':days<=7?'amber':'green'}">${days} days left</span>
+        </div>`;
+      }).join('')}</div>` : `<div class="empty-state">No upcoming exams or assignments. Add them in the Schedule tab.</div>`}
     </div>
 
     <div class="grid cols-2" style="margin-top:22px;">
@@ -169,6 +186,21 @@ function renderSettings() {
         <input type="text" id="set-currency" value="${escapeHtml(DB.settings.currency)}" maxlength="3" style="max-width:100px;">
         <button class="btn" id="save-currency-btn">Save</button>
       </div>
+    </div>
+
+    <div class="section-title">Alarm & Notifications</div>
+    <div class="card">
+      <p style="font-size:13px;color:var(--ink-soft);margin-top:0;">
+        When a reminder is due, the app plays a sound, vibrates the phone, and (if allowed) shows a system notification.
+      </p>
+      <div class="form-row" style="align-items:center;">
+        <span class="pill ${Notification.permission === 'granted' ? 'green' : Notification.permission === 'denied' ? 'red' : 'amber'}">
+          ${Notification.permission === 'granted' ? '✓ Notifications enabled' : Notification.permission === 'denied' ? '✕ Notifications blocked' : '! Not enabled yet'}
+        </span>
+        ${Notification.permission !== 'granted' ? `<button class="btn sm" id="enable-notif-btn">Enable Notifications</button>` : `<button class="btn sm secondary" id="test-alarm-btn">🔔 Test Alarm</button>`}
+      </div>
+      ${Notification.permission === 'denied' ? `<p style="font-size:12px;color:var(--ink-soft);">You blocked notifications earlier. Enable them from your browser's site settings to get alarm popups even when the app is in the background.</p>` : ''}
+      <p style="font-size:12px;color:var(--ink-soft);margin-bottom:0;">Note: this alarm only fires while the app or your browser is running (even in a background tab). It cannot wake your phone up if the browser is fully closed — that requires a native app, which is possible as a future upgrade.</p>
     </div>
 
     <div class="section-title">Custom Expense Categories</div>
@@ -217,6 +249,15 @@ function renderSettings() {
 }
 
 function bindSettingsEvents() {
+  const enableNotifBtn = document.getElementById('enable-notif-btn');
+  if (enableNotifBtn) enableNotifBtn.onclick = () => {
+    Notification.requestPermission().then(() => render());
+  };
+  const testAlarmBtn = document.getElementById('test-alarm-btn');
+  if (testAlarmBtn) testAlarmBtn.onclick = () => {
+    triggerAlarm('Test Alarm', 'This is what a reminder alert looks and sounds like.');
+  };
+
   document.getElementById('save-currency-btn').onclick = () => {
     const v = document.getElementById('set-currency').value.trim() || '৳';
     DB.settings.currency = v;
@@ -277,6 +318,10 @@ document.addEventListener('DOMContentLoaded', () => {
   navigate('dashboard');
   checkDueReminders();
   setInterval(checkDueReminders, 60000);
+
+  // Ask for notification permission on first meaningful interaction (click),
+  // since browsers block permission prompts that fire immediately on page load.
+  document.body.addEventListener('click', requestNotificationPermission, { once: true });
 
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('service-worker.js').catch(() => {});

@@ -89,17 +89,31 @@ function toggleReminder(id) {
 }
 function deleteReminder(id) { DB.reminders = DB.reminders.filter(r => r.id !== id); persist(); render(); }
 
-/* Check for reminders that are due "now" and show a toast banner */
+/* Check for reminders that are due "now" and fire the full alarm (sound + vibration + notification) */
 function checkDueReminders() {
   const now = new Date();
+  let changed = false;
   DB.reminders.forEach(r => {
     if (!r.done && !r._alerted) {
       const dt = new Date(r.datetime);
       if (dt <= now && dt > new Date(now - 5 * 60000)) {
-        showToast('⏰ Reminder: ' + r.title);
+        triggerAlarm(r.title, r.category + ' · ' + new Date(r.datetime).toLocaleString('en-US', {hour:'2-digit', minute:'2-digit'}));
         r._alerted = true;
-        persist();
+        changed = true;
       }
     }
   });
+
+  // Also alert for recurring bills due today (once per day)
+  const todayKey = todayStr();
+  DB.recurring.forEach(rec => {
+    const dayNow = now.getDate();
+    if (rec.dueDay === dayNow && rec._lastAlertDate !== todayKey) {
+      triggerAlarm('Bill Due: ' + rec.name, fmt(rec.amount) + ' · ' + rec.category);
+      rec._lastAlertDate = todayKey;
+      changed = true;
+    }
+  });
+
+  if (changed) persist();
 }
