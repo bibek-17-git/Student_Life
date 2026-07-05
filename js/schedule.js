@@ -33,9 +33,9 @@ function bindScheduleEvents() {
     const end = document.getElementById('cls-end').value;
     const subject = document.getElementById('cls-subject').value.trim();
     const location = document.getElementById('cls-location').value.trim();
-    const alarm = document.getElementById('cls-alarm').checked;
+    const alarmCfg = readAlarmControls('cls');
     if (!subject || !start || !end) return showToast('Fill in subject, start and end time');
-    DB.classes.push({ id: uid(), day, start, end, subject, location, alarm });
+    DB.classes.push({ id: uid(), day, start, end, subject, location, ...alarmCfg });
     persist(); render();
   };
 
@@ -65,9 +65,9 @@ function bindScheduleEvents() {
     const subject = document.getElementById('exam-subject').value.trim();
     const date = document.getElementById('exam-date').value;
     const time = document.getElementById('exam-time').value || '09:00';
-    const alarm = document.getElementById('exam-alarm').checked;
+    const alarmCfg = readAlarmControls('exam');
     if (!subject || !date) return showToast('Enter subject and date');
-    DB.exams.push({ id: uid(), subject, date, time, alarm, syllabus: [] });
+    DB.exams.push({ id: uid(), subject, date, time, ...alarmCfg, syllabus: [] });
     persist(); render();
   };
 
@@ -96,9 +96,7 @@ function renderTimetable() {
         <input type="text" id="cls-subject" placeholder="Subject name">
         <input type="text" id="cls-location" placeholder="Location (optional)">
       </div>
-      <div class="form-row" style="align-items:center;">
-        <label class="checkbox-row" style="cursor:pointer;"><input type="checkbox" id="cls-alarm" checked> 🔔 Set alarm at class start time</label>
-      </div>
+      ${alarmControlsHTML('cls')}
       <button class="btn" id="add-class-btn">＋ Add Class</button>
     </div>
     <div class="section-title">Weekly Timetable</div>
@@ -109,7 +107,7 @@ function renderTimetable() {
         <div class="tt-cell" style="background:transparent;border:none;"></div>
         ${DAYS.map(d => `<div class="tt-cell">
           ${DB.classes.filter(c => c.day === d).sort((a,b)=>a.start.localeCompare(b.start)).map(c => `
-            <div class="tt-class" onclick="deleteClass('${c.id}')" title="Click to remove">${c.alarm !== false ? '🔔 ' : ''}${escapeHtml(c.subject)}<br>${c.start}-${c.end}</div>
+            <div class="tt-class" onclick="deleteClass('${c.id}')" title="Click to remove">${alarmTimingLabel(c)} ${escapeHtml(c.subject)}<br>${c.start}-${c.end}</div>
           `).join('')}
         </div>`).join('')}
       </div>
@@ -118,7 +116,7 @@ function renderTimetable() {
 }
 function deleteClass(id) { DB.classes = DB.classes.filter(c => c.id !== id); persist(); render(); }
 
-/* Alarm check: fires once per class per day, at its scheduled start time */
+/* Alarm check: fires once per class per day, at its configured alarm time */
 function checkDueClasses() {
   const now = new Date();
   const weekday = now.toLocaleDateString('en-US', { weekday: 'long' });
@@ -128,9 +126,8 @@ function checkDueClasses() {
     if (c.alarm === false) return;
     if (c.day !== weekday) return;
     if (c._lastAlertDate === todayKey) return;
-    const [h, m] = c.start.split(':').map(Number);
-    const classTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m);
-    if (classTime <= now && classTime > new Date(now - 5 * 60000)) {
+    const alarmTime = computeAlarmMoment(todayKey, c.start, c);
+    if (alarmTime <= now && alarmTime > new Date(now - 5 * 60000)) {
       triggerAlarm('Class: ' + c.subject, c.start + '-' + c.end + (c.location ? ' · ' + c.location : ''));
       c._lastAlertDate = todayKey;
       changed = true;
@@ -139,14 +136,14 @@ function checkDueClasses() {
   if (changed) persist();
 }
 
-/* Alarm check: fires once per exam, at its scheduled date/time */
+/* Alarm check: fires once per exam, at its configured alarm time */
 function checkDueExams() {
   const now = new Date();
   let changed = false;
   DB.exams.forEach(e => {
     if (e.alarm === false || e._alerted) return;
-    const dt = new Date(e.date + 'T' + (e.time || '09:00'));
-    if (dt <= now && dt > new Date(now - 5 * 60000)) {
+    const alarmTime = computeAlarmMoment(e.date, e.time || '09:00', e);
+    if (alarmTime <= now && alarmTime > new Date(now - 5 * 60000)) {
       triggerAlarm('Exam/Assignment: ' + e.subject, e.date + ' · ' + (e.time || '09:00'));
       e._alerted = true;
       changed = true;
@@ -283,9 +280,7 @@ function renderExams() {
         <input type="date" id="exam-date">
         <input type="time" id="exam-time" value="09:00">
       </div>
-      <div class="form-row" style="align-items:center;">
-        <label class="checkbox-row" style="cursor:pointer;"><input type="checkbox" id="exam-alarm" checked> 🔔 Set alarm for this date/time</label>
-      </div>
+      ${alarmControlsHTML('exam')}
       <button class="btn" id="add-exam-btn">＋ Add</button>
     </div>
     <div class="section-title">Upcoming</div>
@@ -295,7 +290,7 @@ function renderExams() {
         const doneCount = e.syllabus.filter(s => s.done).length;
         return `<div class="card">
           <div class="row-item" style="border:none;padding:0;">
-            <div><div class="title">${e.alarm !== false ? '🔔 ' : ''}${escapeHtml(e.subject)}</div><div class="meta">${e.date}${e.time ? ' · '+e.time : ''}</div></div>
+            <div><div class="title">${alarmTimingLabel(e)} ${escapeHtml(e.subject)}</div><div class="meta">${e.date}${e.time ? ' · '+e.time : ''}</div></div>
             <span class="pill ${days<=3?'red':days<=7?'amber':'green'}">${days>=0 ? days+' days left' : 'Passed'}</span>
             <div class="row-actions"><button onclick="deleteExam('${e.id}')">✕</button></div>
           </div>
