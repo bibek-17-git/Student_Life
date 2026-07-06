@@ -74,6 +74,7 @@ function checkAllAlarms() {
   if (typeof checkDueClasses === 'function') checkDueClasses();
   if (typeof checkDueExams === 'function') checkDueExams();
   if (typeof checkDueReminders === 'function') checkDueReminders();
+  if (typeof checkBudgetAlerts === 'function') checkBudgetAlerts();
 }
 
 /* ---------- Shared "when should the alarm ring" controls (used by Class & Exam forms) ---------- */

@@ -2,11 +2,20 @@
 
 const EXPENSE_CATEGORIES = ['Food', 'Transport', 'Rent', 'Phone/Internet', 'Books/Materials', 'Outing with Friends', 'Medicine', 'Shopping', 'Entertainment', 'Other'];
 const INCOME_SOURCES = ['Tuition Fee Earning', 'Part-time Job', 'Family/Parents', 'Scholarship', 'Other'];
+const ACCOUNTS = ['Cash', 'bKash', 'Nagad', 'Bank'];
+const EXPENSE_TAGS = ['Essential', 'Optional'];
 
 let financeTab = 'overview';
+let expenseFilter = { from: '', to: '', category: 'All', sort: 'date-desc' };
 
 function allCategories() {
   return [...EXPENSE_CATEGORIES, ...(DB.customCategories || [])];
+}
+
+function accountBalance(acc) {
+  const inc = DB.income.filter(i => (i.account || 'Cash') === acc).reduce((s, i) => s + Number(i.amount), 0);
+  const exp = DB.expenses.filter(e => (e.account || 'Cash') === acc).reduce((s, e) => s + Number(e.amount), 0);
+  return inc - exp;
 }
 
 function renderFinance() {
@@ -45,6 +54,20 @@ function renderFinanceOverview() {
   const monthIncome = DB.income.filter(i => i.date.startsWith(monthPrefix)).reduce((s, i) => s + Number(i.amount), 0);
   const monthExpense = DB.expenses.filter(e => e.date.startsWith(monthPrefix)).reduce((s, e) => s + Number(e.amount), 0);
 
+  // last month prefix, for trend comparison
+  const now = new Date();
+  const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const lastPrefix = lastMonthDate.toISOString().slice(0, 7);
+  const lastIncome = DB.income.filter(i => i.date.startsWith(lastPrefix)).reduce((s, i) => s + Number(i.amount), 0);
+  const lastExpense = DB.expenses.filter(e => e.date.startsWith(lastPrefix)).reduce((s, e) => s + Number(e.amount), 0);
+
+  const pctChange = (curr, prev) => {
+    if (prev === 0) return curr === 0 ? 0 : 100;
+    return Math.round(((curr - prev) / prev) * 100);
+  };
+  const expChange = pctChange(monthExpense, lastExpense);
+  const incChange = pctChange(monthIncome, lastIncome);
+
   const byCategory = {};
   DB.expenses.filter(e => e.date.startsWith(monthPrefix)).forEach(e => {
     byCategory[e.category] = (byCategory[e.category] || 0) + Number(e.amount);
@@ -58,6 +81,29 @@ function renderFinanceOverview() {
       <div class="card"><h3>Expense (This Month)</h3><div class="stat red">${fmt(monthExpense)}</div></div>
       <div class="card"><h3>Balance</h3><div class="stat ${monthIncome-monthExpense>=0?'green':'red'}">${fmt(monthIncome-monthExpense)}</div></div>
     </div>
+
+    <div class="section-title">This Month vs Last Month</div>
+    <div class="grid cols-2">
+      <div class="card">
+        <h3>Income Trend</h3>
+        <div class="stat ${incChange>=0?'green':'red'}">${incChange>=0?'▲':'▼'} ${Math.abs(incChange)}%</div>
+        <div class="stat-label">${fmt(lastIncome)} → ${fmt(monthIncome)}</div>
+      </div>
+      <div class="card">
+        <h3>Expense Trend</h3>
+        <div class="stat ${expChange<=0?'green':'red'}">${expChange>=0?'▲':'▼'} ${Math.abs(expChange)}%</div>
+        <div class="stat-label">${fmt(lastExpense)} → ${fmt(monthExpense)}</div>
+      </div>
+    </div>
+
+    <div class="section-title">Account Balances</div>
+    <div class="grid cols-4">
+      ${ACCOUNTS.map(acc => {
+        const bal = accountBalance(acc);
+        return `<div class="card"><h3>${acc}</h3><div class="stat ${bal>=0?'blue':'red'}">${fmt(bal)}</div></div>`;
+      }).join('')}
+    </div>
+
     <div class="section-title">Expense by Category (This Month)</div>
     <div class="card">
       ${catEntries.length ? `<div class="row-list">${catEntries.map(([cat, amt]) => `
@@ -79,6 +125,7 @@ function renderIncomeTab() {
         <select id="inc-source">${INCOME_SOURCES.map(s => `<option>${s}</option>`).join('')}</select>
         <input type="number" id="inc-amount" placeholder="Amount">
         <input type="date" id="inc-date" value="${todayStr()}">
+        <select id="inc-account">${ACCOUNTS.map(a => `<option>${a}</option>`).join('')}</select>
       </div>
       <div class="form-row"><input type="text" id="inc-note" placeholder="Note (optional)"></div>
       <button class="btn" id="add-income-btn">＋ Add Income</button>
@@ -87,9 +134,9 @@ function renderIncomeTab() {
     <div class="card">
       ${sorted.length ? `<div class="row-list">${sorted.map(i => `
         <div class="row-item">
-          <div><div class="title">${escapeHtml(i.source)}</div><div class="meta">${i.date}${i.note ? ' · '+escapeHtml(i.note) : ''}</div></div>
+          <div><div class="title">${escapeHtml(i.source)}</div><div class="meta">${i.date} · ${i.account || 'Cash'}${i.note ? ' · '+escapeHtml(i.note) : ''}</div></div>
           <div class="amount income">+${fmt(i.amount)}</div>
-          <div class="row-actions"><button onclick="deleteIncome('${i.id}')">✕</button></div>
+          <div class="row-actions"><button onclick="editIncome('${i.id}')">✎</button><button onclick="deleteIncome('${i.id}')">✕</button></div>
         </div>`).join('')}</div>` : `<div class="empty-state">No income recorded yet.</div>`}
     </div>
   `;
@@ -101,9 +148,10 @@ function bindFinanceEvents() {
     const source = document.getElementById('inc-source').value;
     const amount = Number(document.getElementById('inc-amount').value);
     const date = document.getElementById('inc-date').value || todayStr();
+    const account = document.getElementById('inc-account').value;
     const note = document.getElementById('inc-note').value.trim();
     if (!amount) return showToast('Enter a valid amount');
-    DB.income.push({ id: uid(), source, amount, date, note });
+    DB.income.push({ id: uid(), source, amount, date, account, note });
     persist(); showToast('Income added'); render();
   };
 
@@ -112,10 +160,26 @@ function bindFinanceEvents() {
     const category = document.getElementById('exp-category').value;
     const amount = Number(document.getElementById('exp-amount').value);
     const date = document.getElementById('exp-date').value || todayStr();
+    const account = document.getElementById('exp-account').value;
+    const tag = document.getElementById('exp-tag').value;
     const note = document.getElementById('exp-note').value.trim();
     if (!amount) return showToast('Enter a valid amount');
-    DB.expenses.push({ id: uid(), category, amount, date, note });
+    DB.expenses.push({ id: uid(), category, amount, date, account, tag, note });
     persist(); showToast('Expense added'); render();
+  };
+
+  const applyFilterBtn = document.getElementById('apply-filter-btn');
+  if (applyFilterBtn) applyFilterBtn.onclick = () => {
+    expenseFilter.from = document.getElementById('filter-from').value;
+    expenseFilter.to = document.getElementById('filter-to').value;
+    expenseFilter.category = document.getElementById('filter-category').value;
+    expenseFilter.sort = document.getElementById('filter-sort').value;
+    render();
+  };
+  const clearFilterBtn = document.getElementById('clear-filter-btn');
+  if (clearFilterBtn) clearFilterBtn.onclick = () => {
+    expenseFilter = { from: '', to: '', category: 'All', sort: 'date-desc' };
+    render();
   };
 
   const saveBudgetBtn = document.getElementById('save-budget-btn');
@@ -145,9 +209,18 @@ function bindFinanceEvents() {
     const person = document.getElementById('debt-person').value.trim();
     const amount = Number(document.getElementById('debt-amount').value);
     const type = document.getElementById('debt-type').value;
+    const dueDate = document.getElementById('debt-duedate').value;
     if (!person || !amount) return showToast('Enter person and amount');
-    DB.debts.push({ id: uid(), person, amount, type, paid: false, date: todayStr() });
-    persist(); render();
+    const debtId = uid();
+    DB.debts.push({ id: debtId, person, amount, type, paid: false, date: todayStr(), dueDate });
+    if (dueDate) {
+      const label = type === 'owe' ? `Pay back ${person}` : `Collect from ${person}`;
+      DB.reminders.push({
+        id: uid(), title: label + ' (' + fmt(amount) + ')', datetime: dueDate + 'T09:00',
+        category: 'Bill Payment', repeat: 'none', alarm: true, done: false, linkedDebtId: debtId
+      });
+    }
+    persist(); showToast(dueDate ? 'Debt added with a reminder' : 'Debt added'); render();
   };
 
   const addSplitBtn = document.getElementById('add-split-btn');
@@ -176,6 +249,35 @@ function bindFinanceEvents() {
 
 function deleteIncome(id) { DB.income = DB.income.filter(i => i.id !== id); persist(); render(); }
 function deleteExpense(id) { DB.expenses = DB.expenses.filter(e => e.id !== id); persist(); render(); }
+
+function editIncome(id) {
+  const i = DB.income.find(i => i.id === id);
+  if (!i) return;
+  const newAmount = prompt('Edit amount:', i.amount);
+  if (newAmount === null) return;
+  const newDate = prompt('Edit date (YYYY-MM-DD):', i.date);
+  if (newDate === null) return;
+  const newNote = prompt('Edit note:', i.note || '');
+  if (Number(newAmount) > 0) i.amount = Number(newAmount);
+  if (newDate) i.date = newDate;
+  i.note = newNote || '';
+  persist(); showToast('Income updated'); render();
+}
+
+function editExpense(id) {
+  const e = DB.expenses.find(e => e.id === id);
+  if (!e) return;
+  const newAmount = prompt('Edit amount:', e.amount);
+  if (newAmount === null) return;
+  const newDate = prompt('Edit date (YYYY-MM-DD):', e.date);
+  if (newDate === null) return;
+  const newNote = prompt('Edit note:', e.note || '');
+  if (Number(newAmount) > 0) e.amount = Number(newAmount);
+  if (newDate) e.date = newDate;
+  e.note = newNote || '';
+  persist(); showToast('Expense updated'); render();
+}
+
 function deleteGoal(id) { DB.savingsGoals = DB.savingsGoals.filter(g => g.id !== id); persist(); render(); }
 function deleteDebt(id) { DB.debts = DB.debts.filter(d => d.id !== id); persist(); render(); }
 function toggleDebtPaid(id) { const d = DB.debts.find(d => d.id === id); if (d) d.paid = !d.paid; persist(); render(); }
@@ -192,7 +294,18 @@ function addToGoal(id) {
 
 /* ---------- Expenses ---------- */
 function renderExpensesTab() {
-  const sorted = [...DB.expenses].sort((a,b) => b.date.localeCompare(a.date));
+  let filtered = [...DB.expenses];
+  if (expenseFilter.from) filtered = filtered.filter(e => e.date >= expenseFilter.from);
+  if (expenseFilter.to) filtered = filtered.filter(e => e.date <= expenseFilter.to);
+  if (expenseFilter.category !== 'All') filtered = filtered.filter(e => e.category === expenseFilter.category);
+
+  if (expenseFilter.sort === 'date-desc') filtered.sort((a,b) => b.date.localeCompare(a.date));
+  else if (expenseFilter.sort === 'date-asc') filtered.sort((a,b) => a.date.localeCompare(b.date));
+  else if (expenseFilter.sort === 'amount-desc') filtered.sort((a,b) => b.amount - a.amount);
+  else if (expenseFilter.sort === 'amount-asc') filtered.sort((a,b) => a.amount - b.amount);
+
+  const quickAmounts = [20, 30, 50, 100, 200];
+
   return `
     <div class="card">
       <h3>Add Expense</h3>
@@ -201,17 +314,48 @@ function renderExpensesTab() {
         <input type="number" id="exp-amount" placeholder="Amount">
         <input type="date" id="exp-date" value="${todayStr()}">
       </div>
+      <div class="form-row">
+        <select id="exp-account">${ACCOUNTS.map(a => `<option>${a}</option>`).join('')}</select>
+        <select id="exp-tag">${EXPENSE_TAGS.map(t => `<option>${t}</option>`).join('')}</select>
+      </div>
+      <div class="form-row">
+        <span style="font-size:12px;color:var(--ink-soft);align-self:center;">Quick amount:</span>
+        ${quickAmounts.map(a => `<button type="button" class="btn sm secondary" onclick="document.getElementById('exp-amount').value=${a}">${a}</button>`).join('')}
+      </div>
       <div class="form-row"><input type="text" id="exp-note" placeholder="Note (optional)"></div>
       <button class="btn" id="add-expense-btn">＋ Add Expense</button>
     </div>
-    <div class="section-title">Expense History</div>
+
+    <div class="section-title">Search &amp; Filter</div>
     <div class="card">
-      ${sorted.length ? `<div class="row-list">${sorted.map(e => `
+      <div class="form-row">
+        <label style="font-size:12px;">From<input type="date" id="filter-from" value="${expenseFilter.from}"></label>
+        <label style="font-size:12px;">To<input type="date" id="filter-to" value="${expenseFilter.to}"></label>
+        <select id="filter-category">
+          <option ${expenseFilter.category==='All'?'selected':''}>All</option>
+          ${allCategories().map(c => `<option ${expenseFilter.category===c?'selected':''}>${c}</option>`).join('')}
+        </select>
+        <select id="filter-sort">
+          <option value="date-desc" ${expenseFilter.sort==='date-desc'?'selected':''}>Newest first</option>
+          <option value="date-asc" ${expenseFilter.sort==='date-asc'?'selected':''}>Oldest first</option>
+          <option value="amount-desc" ${expenseFilter.sort==='amount-desc'?'selected':''}>Highest amount</option>
+          <option value="amount-asc" ${expenseFilter.sort==='amount-asc'?'selected':''}>Lowest amount</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <button class="btn sm" id="apply-filter-btn">Apply Filter</button>
+        <button class="btn sm secondary" id="clear-filter-btn">Clear Filter</button>
+      </div>
+    </div>
+
+    <div class="section-title">Expense History ${filtered.length !== DB.expenses.length ? `(${filtered.length} of ${DB.expenses.length})` : ''}</div>
+    <div class="card">
+      ${filtered.length ? `<div class="row-list">${filtered.map(e => `
         <div class="row-item">
-          <div><div class="title">${escapeHtml(e.category)}</div><div class="meta">${e.date}${e.note ? ' · '+escapeHtml(e.note) : ''}</div></div>
+          <div><div class="title">${escapeHtml(e.category)} <span class="pill ${e.tag==='Essential'?'green':'amber'}" style="font-size:10px;">${e.tag||'Essential'}</span></div><div class="meta">${e.date} · ${e.account||'Cash'}${e.note ? ' · '+escapeHtml(e.note) : ''}</div></div>
           <div class="amount expense">-${fmt(e.amount)}</div>
-          <div class="row-actions"><button onclick="deleteExpense('${e.id}')">✕</button></div>
-        </div>`).join('')}</div>` : `<div class="empty-state">No expenses recorded yet.</div>`}
+          <div class="row-actions"><button onclick="editExpense('${e.id}')">✎</button><button onclick="deleteExpense('${e.id}')">✕</button></div>
+        </div>`).join('')}</div>` : `<div class="empty-state">No expenses match this filter.</div>`}
     </div>
   `;
 }
@@ -292,6 +436,7 @@ function renderDebtsTab() {
         <input type="text" id="debt-person" placeholder="Person's name">
         <input type="number" id="debt-amount" placeholder="Amount">
         <select id="debt-type"><option value="owe">I owe them</option><option value="owed">They owe me</option></select>
+        <input type="date" id="debt-duedate" placeholder="Due date (optional)">
       </div>
       <button class="btn" id="add-debt-btn">＋ Add</button>
     </div>
@@ -301,7 +446,7 @@ function renderDebtsTab() {
         <div class="card">
           ${owed.length ? `<div class="row-list">${owed.map(d => `
             <div class="row-item">
-              <div><div class="title">${escapeHtml(d.person)}</div><div class="meta">${d.date}</div></div>
+              <div><div class="title">${escapeHtml(d.person)}</div><div class="meta">${d.date}${d.dueDate ? ' · due '+d.dueDate : ''}</div></div>
               <div class="amount income">${fmt(d.amount)}</div>
               <div class="row-actions"><button onclick="toggleDebtPaid('${d.id}')">✓</button><button onclick="deleteDebt('${d.id}')">✕</button></div>
             </div>`).join('')}</div>` : `<div class="empty-state">Nobody owes you right now.</div>`}
@@ -312,7 +457,7 @@ function renderDebtsTab() {
         <div class="card">
           ${owing.length ? `<div class="row-list">${owing.map(d => `
             <div class="row-item">
-              <div><div class="title">${escapeHtml(d.person)}</div><div class="meta">${d.date}</div></div>
+              <div><div class="title">${escapeHtml(d.person)}</div><div class="meta">${d.date}${d.dueDate ? ' · due '+d.dueDate : ''}</div></div>
               <div class="amount expense">${fmt(d.amount)}</div>
               <div class="row-actions"><button onclick="toggleDebtPaid('${d.id}')">✓</button><button onclick="deleteDebt('${d.id}')">✕</button></div>
             </div>`).join('')}</div>` : `<div class="empty-state">You don't owe anyone right now.</div>`}
@@ -358,6 +503,27 @@ function renderSplitTab() {
 }
 
 /* ---------- Recurring Bills ---------- */
+function checkBudgetAlerts() {
+  if (typeof triggerAlarm !== 'function') return;
+  const monthPrefix = todayStr().slice(0, 7);
+  const spentByCat = {};
+  DB.expenses.filter(e => e.date.startsWith(monthPrefix)).forEach(e => {
+    spentByCat[e.category] = (spentByCat[e.category] || 0) + Number(e.amount);
+  });
+  let changed = false;
+  Object.entries(DB.budgets).forEach(([cat, budget]) => {
+    const spent = spentByCat[cat] || 0;
+    const pct = budget > 0 ? (spent / budget) * 100 : 0;
+    const alertKey = cat + '-' + monthPrefix;
+    if (pct >= 80 && DB.budgetAlerted[alertKey] !== true) {
+      triggerAlarm('Budget Alert: ' + cat, `You've used ${Math.round(pct)}% of your ${fmt(budget)} budget this month.`);
+      DB.budgetAlerted[alertKey] = true;
+      changed = true;
+    }
+  });
+  if (changed) persist();
+}
+
 function renderRecurringTab() {
   return `
     <div class="card">

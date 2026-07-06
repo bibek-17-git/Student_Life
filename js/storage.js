@@ -2,11 +2,22 @@
 
 const DB_KEY = 'slm_data_v1';
 
+function cloneData(obj) {
+  if (typeof structuredClone === 'function') return structuredClone(obj);
+  return JSON.parse(JSON.stringify(obj));
+}
+
 const DEFAULT_DATA = {
-  settings: { currency: '৳', darkMode: false },
+  settings: {
+    currency: '৳',
+    darkMode: false,
+    dashboardSections: { classes: true, exams: true, finance: true, tasks: true, reminders: true, savings: true },
+    financeRange: 'month'
+  },
   income: [],
   expenses: [],
   budgets: {},
+  budgetAlerted: {},
   savingsGoals: [],
   debts: [],
   splits: [],
@@ -26,15 +37,19 @@ function loadData() {
     const raw = localStorage.getItem(DB_KEY);
     if (!raw) {
       saveData(DEFAULT_DATA);
-      return structuredClone(DEFAULT_DATA);
+      return cloneData(DEFAULT_DATA);
     }
     const parsed = JSON.parse(raw);
     // merge with defaults so new keys added later don't break old saved data
-    return { ...structuredClone(DEFAULT_DATA), ...parsed };
+    const merged = { ...cloneData(DEFAULT_DATA), ...parsed };
+    // settings is nested, so shallow merge above can miss new sub-fields - merge one level deeper
+    merged.settings = { ...DEFAULT_DATA.settings, ...(parsed.settings || {}) };
+    merged.settings.dashboardSections = { ...DEFAULT_DATA.settings.dashboardSections, ...((parsed.settings || {}).dashboardSections || {}) };
+    return merged;
   } catch (e) {
     console.error('Failed to load data, resetting.', e);
     saveData(DEFAULT_DATA);
-    return structuredClone(DEFAULT_DATA);
+    return cloneData(DEFAULT_DATA);
   }
 }
 
@@ -54,7 +69,7 @@ function persist() {
 }
 
 function resetAllData() {
-  DB = structuredClone(DEFAULT_DATA);
+  DB = cloneData(DEFAULT_DATA);
   persist();
 }
 
